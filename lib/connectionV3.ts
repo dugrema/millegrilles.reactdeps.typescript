@@ -26,6 +26,7 @@ export type SendProps = VerifyResponseOpts & {
     overrideConnected?: boolean,
     partition?: string,
     attachments?: Object
+    encrypt?: boolean,
 }
 
 export type EmitProps = {
@@ -74,6 +75,7 @@ export default class ConnectionSocketio {
     callback?: (params: ConnectionCallbackParameters) => void;
     opts?: ConnectionSocketioProps;
     unsubscribeHandlers: { [key: string]: () => void };
+    encryptionCertificates: Array<certificates.CertificateWrapper>;
 
     /**
      * 
@@ -87,6 +89,7 @@ export default class ConnectionSocketio {
         this.url = url;
         this.opts = opts;
         this.unsubscribeHandlers = {};
+        this.encryptionCertificates = [];
 
         // Wrap the callback to avoid a comlink error.
         this.callback = (params) => { callback(params); }
@@ -160,7 +163,29 @@ export default class ConnectionSocketio {
     async onConnectHandler() {
         // Pour la premiere connexion, infoPromise est le resultat d'une requete getEtatAuth.
         const info = await this.emitWithAck('getEtatAuth', {}, {noverif: true, overrideConnected: true}) as any;
-        
+
+        // Ensure encryption certificates are loaded.
+        if(this.encryptionCertificates.length === 0) {
+            let response = await this.emitWithAck('getCertificatsMaitredescles', null, {noverif: true}) as Array<Array<string>>;
+
+            if(response && response.length > 0) {
+                let wrappers = response.map(item=>{
+                    let wrapper = new certificates.CertificateWrapper(item);
+                    wrapper.populateExtensions();
+                    return wrapper;
+                })
+                .filter(item=>
+                    item.extensions?.domains?.includes('MaitreDesCles') &&
+                    item.extensions?.exchanges?.includes('4.secure')
+                );
+                this.encryptionCertificates = wrappers
+            } 
+            
+            if(this.encryptionCertificates.length === 0) {
+                console.info("No encryption certificates are available for this system");
+            }
+        }
+
         if(this.callback) {
             let params: ConnectionCallbackParameters = {connected: true, authenticated: info.auth};
             if(info.username) params.username = info.username;
@@ -244,6 +269,20 @@ export default class ConnectionSocketio {
     {
         if(!this.messageFactory) throw new Error('Signing key is not loaded');
         return await this.messageFactory.createRoutedMessage(kind, content, routing, timestamp);
+    }
+
+    /**
+     * Creates and signs a new routed message.
+     * @param kind Request (1) or command (2).
+     * @param content 
+     * @param routing 
+     * @param timestamp 
+     * @returns 
+     */
+    async createEncryptedCommand(content: Object, routing: messageStruct.Routage, timestamp?: Date): Promise<messageStruct.MilleGrillesMessage> {
+        if(!this.messageFactory) throw new Error('Signing key is not loaded');
+        if(this.encryptionCertificates.length === 0) throw new Error('No encryption certificates are available');
+        return await this.messageFactory.createEncryptedCommand(this.encryptionCertificates, content, routing, timestamp);
     }
 
     /**
@@ -377,7 +416,9 @@ export default class ConnectionSocketio {
      * @returns Response from the back-end component
      */
     async sendRequest(message: Object, domain: string, action: string, props?: SendProps): Promise<MessageResponse> {
+        if(props.encrypt) throw new Error('Encrypting a request is not unsupported');
         if(!this.messageFactory) throw new Error("User is not initialized");
+
         let routing: {domaine: string, action: string, partition?: string} = {domaine: domain, action};
         if(props?.partition) routing.partition = props.partition;
         let request = await this.messageFactory.createRoutedMessage(messageStruct.MessageKind.Request, message, routing, new Date());
@@ -404,6 +445,11 @@ export default class ConnectionSocketio {
         if(!this.messageFactory) throw new Error("User is not initialized");
         let routing: {domaine: string, action: string, partition?: string} = {domaine: domain, action};
         if(props?.partition) routing.partition = props.partition;
+
+        if(props.encrypt) {
+            throw new Error('todo');
+        }
+
         let command = await this.messageFactory.createRoutedMessage(messageStruct.MessageKind.Command, message, routing, new Date());
         if(!command) throw new Error("Error generating command: null");
         if(props?.attachments) command.attachements = props.attachments;
@@ -563,7 +609,8 @@ export class ConnectionWorker {
 
     async prepareMessageFactory(privateKey: Uint8Array, certificate: Array<string>) {
         if(!this.connection) throw new Error("Connection is not initialized");
-        let signingKey = await ed25519.messageSigningKeyFromBytes(privateKey, certificate);
+        let caPem = this.connection.certificateStore.caPem;
+        let signingKey = await ed25519.messageSigningKeyFromBytes(privateKey, certificate, caPem);
         return this.connection.prepareMessageFactory(signingKey);
     }
 
@@ -621,6 +668,12 @@ class MessageFactory {
         timestamp?: Date): Promise<messageStruct.MilleGrillesMessage> 
     {
         return await messageStruct.createRoutedMessage(this.signingKey, kind, content, routing, timestamp);
+    }
+
+    async createEncryptedCommand(encryptionKeys: Array<certificates.CertificateWrapper>, 
+        content: Object, routing: messageStruct.Routage, timestamp?: Date): Promise<messageStruct.MilleGrillesMessage> 
+    {
+        return await messageStruct.createEncryptedCommand(this.signingKey, encryptionKeys, content, routing, timestamp);
     }
 
     async createResponse(content: Object, timestamp?: Date): Promise<messageStruct.MilleGrillesMessage> {
