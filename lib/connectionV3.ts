@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { certificates, ed25519, messageStruct } from 'millegrilles.cryptography';
+import { certificates, ed25519, messageStruct, multiencoding, x25519, encryptionMgs4 } from 'millegrilles.cryptography';
 
 const CONST_TRANSPORTS = ['websocket', 'polling'];
 
@@ -159,7 +159,7 @@ export default class ConnectionSocketio {
 
     async onConnectHandler() {
         // Pour la premiere connexion, infoPromise est le resultat d'une requete getEtatAuth.
-        const info = await this.emitWithAck('getEtatAuth', {}, {noverif: true, overrideConnected: true});
+        const info = await this.emitWithAck('getEtatAuth', {}, {noverif: true, overrideConnected: true}) as any;
         
         if(this.callback) {
             let params: ConnectionCallbackParameters = {connected: true, authenticated: info.auth};
@@ -288,7 +288,7 @@ export default class ConnectionSocketio {
         } else {
             // @ts-ignore
             if(response.err) throw new Error(response.err);  // Server error
-            if(opts.noverif) return response;
+            if(opts.noverif) return response as MessageResponse;
             else throw new Error("Invalid response");
         }
     }
@@ -301,7 +301,7 @@ export default class ConnectionSocketio {
      * @param {*} opts 
      * @returns 
      */
-    async emit(eventName: string, message: Object, opts?: EmitProps) {
+    async emit(eventName: string, message: Object, opts?: EmitProps): Promise<boolean> {
         opts = opts || {}
         if(!this.socket) throw new Error('pas configure');
         if(!eventName) throw new TypeError('Event name is null');
@@ -319,16 +319,26 @@ export default class ConnectionSocketio {
         return true
     }
 
-    async verifyResponse(response: messageStruct.MilleGrillesMessage, opts?: VerifyResponseOpts): Promise<MessageResponse | messageStruct.MilleGrillesMessage> {
+    async verifyResponse(response: any, opts?: VerifyResponseOpts): Promise<MessageResponse> {
         opts = opts || {}
     
         if(opts.noverif) {
             // No verification or parsing of the response.
-            return response
+            let content = {...response, '__original': response} as MessageResponse;
+            return content
         }
-    
+
+        // if(response['__original']) return response;  // Already processed
+        // if(!(response instanceof messageStruct.MilleGrillesMessage)) {
+        //     throw new Error('Wrong response type');
+        // }
+
         if(response.sig && response.certificat) {
-            const certificateWrapper = await this.certificateStore?.verifyMessage(response);
+            // Convert response to MilleGrillesMessage
+            Object.setPrototypeOf(response, messageStruct.MilleGrillesMessage.prototype);
+            let original = response;
+
+            const certificateWrapper = await this.certificateStore?.verifyMessage(original);
 
             if(opts.role) {
                 let roles = certificateWrapper?.extensions?.roles;
@@ -338,18 +348,15 @@ export default class ConnectionSocketio {
                 if(!domains || !domains.includes(opts.domain)) throw new Error(`Invalid response domain: ${domains} - domain mismatch or missing`);
             }
 
-            // Parse le contenu, conserver original
-            let content = response as any;
+            // Parse content, keep original
+            let content = {'__original': original, '__certificate': certificateWrapper} as MessageResponse;
+            // let responseObject = new messageStruct.MilleGrillesMessage(response.estampille, response.kind, response.contenu);
             if(response.kind === 6) {
-                // console.info("Reponse chiffree %O", reponse)
-                throw new Error('todo - decrypt message');
-                // const contenuParsed = await dechiffrerMessage(response);
-                // content = contenuParsed;
-                // content['__original'] = response;
-            } else if(response.contenu) {
-                content = JSON.parse(response.contenu);
-                content['__original'] = response;
-                content['__certificate'] = certificateWrapper;
+                console.info("Encrypted response %O", original)
+                const contenuParsed = await this.messageFactory.decryptMessage(original);
+                content = {...content, ...contenuParsed};
+            } else if(original.contenu) {
+                content = {...JSON.parse(original.contenu), content};
             }
             return content;
         } else {
@@ -370,9 +377,10 @@ export default class ConnectionSocketio {
      * @returns Response from the back-end component
      */
     async sendRequest(message: Object, domain: string, action: string, props?: SendProps): Promise<MessageResponse> {
+        if(!this.messageFactory) throw new Error("User is not initialized");
         let routing: {domaine: string, action: string, partition?: string} = {domaine: domain, action};
         if(props?.partition) routing.partition = props.partition;
-        let request = await this.messageFactory?.createRoutedMessage(messageStruct.MessageKind.Request, message, routing, new Date());
+        let request = await this.messageFactory.createRoutedMessage(messageStruct.MessageKind.Request, message, routing, new Date());
         if(!request) throw new Error("Error generating request: null");
         if(props?.attachments) request.attachements = props.attachments;
         let eventName = props?.eventName || 'route_message';
@@ -393,9 +401,10 @@ export default class ConnectionSocketio {
      * @returns Response from the back-end component
      */
     async sendCommand(message: Object, domain: string, action: string, props?: SendProps): Promise<MessageResponse> {
+        if(!this.messageFactory) throw new Error("User is not initialized");
         let routing: {domaine: string, action: string, partition?: string} = {domaine: domain, action};
         if(props?.partition) routing.partition = props.partition;
-        let command = await this.messageFactory?.createRoutedMessage(messageStruct.MessageKind.Command, message, routing, new Date());
+        let command = await this.messageFactory.createRoutedMessage(messageStruct.MessageKind.Command, message, routing, new Date());
         if(!command) throw new Error("Error generating command: null");
         if(props?.attachments) command.attachements = props.attachments;
         let eventName = props?.eventName || 'route_message';
@@ -413,7 +422,7 @@ export default class ConnectionSocketio {
         }
 
         // Faire une requete pour upgrader avec le certificat
-        let challengeResponse = await this.emitWithAck('genererChallengeCertificat', null, {noverif: true});
+        let challengeResponse = await this.emitWithAck('genererChallengeCertificat', null, {noverif: true}) as any;
         let data = {...challengeResponse.challengeCertificat};
 
         let authenticationResponse = await this.sendCommand(
@@ -450,13 +459,14 @@ export default class ConnectionSocketio {
 
     async subscribe(subscribeEventName: string, callback: SubscriptionCallback, parameters?: SubscriptionParameters): Promise<void> {
         if(!this.socket) throw new Error('Socket not initialized');
+        if(!this.messageFactory) throw new Error("User is not initialized");
 
         let routing = {domaine: 'subscribe', action: subscribeEventName};
         let message = parameters || {};
-        let command = await this.messageFactory?.createRoutedMessage(messageStruct.MessageKind.Command, message, routing, new Date());
+        let command = await this.messageFactory.createRoutedMessage(messageStruct.MessageKind.Command, message, routing, new Date());
         if(!command) throw new Error("Error generating command: null");
 
-        let subscriptionResponse = await this.emitWithAck('subscribe', command, {role: 'private_webapi'});
+        let subscriptionResponse = await this.emitWithAck('subscribe', command, {role: 'private_webapi'}) as any;
         if(!subscriptionResponse.ok) {
             throw new Error('Error subscribing to ' + subscribeEventName + ': ' + subscriptionResponse.err);
         }
@@ -464,7 +474,7 @@ export default class ConnectionSocketio {
         let routingKeys = subscriptionResponse.routingKeys;
 
         // Create a wrapper for the callback. Allows for verification of the event.
-        let wrappedCallback = async (event: any) => {
+        let wrappedCallback = async (event: SubscriptionMessage) => {
             try {
                 let responseMessage = await this.verifyResponse(event.message);
                 callback({...event, message: responseMessage});
@@ -489,6 +499,7 @@ export default class ConnectionSocketio {
 
         // Register event listeners for each routingKey
         for(let rk of routingKeys) {
+            console.debug("Socket on : ", rk);
             this.socket.on(rk, wrappedCallback);
         }
     }
@@ -507,9 +518,10 @@ export default class ConnectionSocketio {
             return
         }
 
+        if(!this.messageFactory) throw new Error("User is not initialized");
         let routing = {domaine: 'unsubscribe', action: subscribeEventName};
         let message = parameters || {};
-        let command = await this.messageFactory?.createRoutedMessage(messageStruct.MessageKind.Command, message, routing, new Date());
+        let command = await this.messageFactory.createRoutedMessage(messageStruct.MessageKind.Command, message, routing, new Date());
         if(!command) throw new Error("Error generating command: null");
 
         let subscriptionResponse = await this.emitWithAck('unsubscribe', command, {role: 'private_webapi'});
@@ -524,11 +536,13 @@ export class ConnectionWorker {
     connection?: ConnectionSocketio;
 
     async connect() {
-        return this.connection?.connect();
+        if(!this.connection) throw new Error("Connection is not initialized");
+        return this.connection.connect();
     }
 
     async reconnect() {
-        return this.connection?.reconnect();
+        if(!this.connection) throw new Error("Connection is not initialized");
+        return this.connection.reconnect();
     }
 
     async initialize(serverUrl: string, ca: string, callback: (params: ConnectionCallbackParameters) => void, opts?: ConnectionSocketioProps): Promise<boolean> {
@@ -538,7 +552,8 @@ export class ConnectionWorker {
 
     /** Maintenance on the connection. Must be called regularly. */
     async maintain() {
-        await this.connection?.certificateStore?.cache.maintain();
+        if(!this.connection) throw new Error("Connection is not initialized");
+        await this.connection.certificateStore?.cache.maintain();
     }
     
     async ping(): Promise<boolean> {
@@ -553,8 +568,10 @@ export class ConnectionWorker {
     }
 
     async signAuthentication(data: {certificate_challenge: string, activation?: boolean, dureeSession?: number}): Promise<string> {
+        if(!this.connection) throw new Error("Connection is not initialized");
+
         // Sign an auth command.
-        let command = await this.connection?.createRoutedMessage(
+        let command = await this.connection.createRoutedMessage(
             messageStruct.MessageKind.Command, 
             data, 
             {domaine: 'auth', action: 'authentifier_usager'}
@@ -573,17 +590,20 @@ export class ConnectionWorker {
     
     async subscribe(subscribeEventName: string, callback: SubscriptionCallback, params?: SubscriptionParameters) {
         if(!this.connection) throw new Error("Connection is not initialized");
+        if(!this.connection.messageFactory) throw new Error("User is not initialized");
         return await this.connection.subscribe(subscribeEventName, callback, params);
     }
 
     async unsubscribe(subscribeEventName: string, callback: SubscriptionCallback, params?: SubscriptionParameters) {
         if(!this.connection) throw new Error("Connection is not initialized");
+        if(!this.connection.messageFactory) throw new Error("User is not initialized");
         return await this.connection.unsubscribe(subscribeEventName, callback, params);
     }
 
     async verifyMessage(message: messageStruct.MilleGrillesMessage): Promise<MessageResponse | messageStruct.MilleGrillesMessage> {
         if(!this.connection) throw new Error("Connection is not initialized");
-        return await this.connection?.verifyResponse(message);
+        if(!this.connection.messageFactory) throw new Error("User is not initialized");
+        return await this.connection.verifyResponse(message);
     }    
 }
 
@@ -606,6 +626,57 @@ class MessageFactory {
     async createResponse(content: Object, timestamp?: Date): Promise<messageStruct.MilleGrillesMessage> {
         return await messageStruct.createResponse(this.signingKey, content, timestamp);
     }
+
+    async decryptMessage(message: messageStruct.MilleGrillesMessage): Promise<Object> {
+        if(!message.dechiffrage) throw new Error("Wrong message type");
+        return await message.getContent(this.signingKey);
+    }
 }
 
 export class DisconnectedError extends Error {}
+
+// export async function decryptResponse(messageFactory: MessageFactory, message: messageStruct.MilleGrillesMessage): Promise<Object> {
+//     let dechiffrage = message.dechiffrage
+
+//     // Decrypt the secret key
+//     let publicKeyString = messageFactory.signingKey.publicKey;
+//     let privateKey = messageFactory.signingKey.key.private;
+//     let decryptedKey = await x25519.decryptEd25519(dechiffrage.cles[publicKeyString], privateKey);
+
+//     // let contenu = multiencoding.decodeBase64Nopad(message.contenu);
+
+//     // console.debug("Formatteur Messages : %O", formatteurMessage)
+//     // const cleChiffree = multiencoding.decodeBase64Nopad(dechiffrage.cles[publicKeyString])
+//     let nonceString = dechiffrage.nonce || (dechiffrage.header?dechiffrage.header.slice(1):null)
+//     let nonce = multiencoding.decodeBase64Nopad(nonceString);
+
+//     const format = dechiffrage.format;
+
+//     let cleartext;
+//     if(format === 'mgs4') {
+//         let decipher = await encryptionMgs4.getMgs4Decipher(decryptedKey, nonce);
+//         let output = await decipher.update(multiencoding.decodeBase64Nopad(message.contenu));
+//         let finalOutput = await decipher.finalize();
+
+//     } else {
+//         throw new Error('Unsupported encryption format');
+//     }
+
+//     // console.debug("Contenu : %O, cle chiffree %O, nonce %s, verification %s, format %s", 
+//     //   contenu, cleChiffree, nonce, verification, format)
+
+//     // const cleDechiffree = await ed25519Utils.dechiffrerCle(cleChiffree, _clePrivee)
+//     // console.debug("Cle dechiffree %O", cleDechiffree)
+  
+//     // contenu = await chiffrage.dechiffrer(cleDechiffree, contenu, {format, header: 'm'+nonce})
+//     // console.debug("Contenu dechiffre\n", contenu)
+  
+//     // Decompresser (gzip)
+//     contenu = new TextDecoder().decode(pako.ungzip(contenu))
+//     // console.debug("Contenu decompresse\n%s", contenu)
+  
+//     contenu = JSON.parse(contenu)
+//     // console.debug("Contenu parsed %O", contenu)
+  
+//     return contenu
+// }
