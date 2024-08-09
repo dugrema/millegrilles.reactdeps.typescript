@@ -562,6 +562,29 @@ export class ConnectionWorker {
         // Serialize to string
         return JSON.stringify(command);
     }
+
+    /**
+     * @returns Current user certificate used for signing messsages.
+     */
+    async getMessageFactoryCertificate() {
+        if(!this.connection) throw new Error("Connection is not initialized");
+        return this.connection.getMessageFactoryCertificate();
+    }
+    
+    async subscribe(subscribeEventName: string, callback: SubscriptionCallback, params?: SubscriptionParameters) {
+        if(!this.connection) throw new Error("Connection is not initialized");
+        return await this.connection.subscribe(subscribeEventName, callback, params);
+    }
+
+    async unsubscribe(subscribeEventName: string, callback: SubscriptionCallback, params?: SubscriptionParameters) {
+        if(!this.connection) throw new Error("Connection is not initialized");
+        return await this.connection.unsubscribe(subscribeEventName, callback, params);
+    }
+
+    async verifyMessage(message: messageStruct.MilleGrillesMessage): Promise<MessageResponse | messageStruct.MilleGrillesMessage> {
+        if(!this.connection) throw new Error("Connection is not initialized");
+        return await this.connection?.verifyResponse(message);
+    }    
 }
 
 /** Facade for the messageStruct create methods. */
