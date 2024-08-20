@@ -358,6 +358,73 @@ export default class ConnectionSocketio {
         return true
     }
 
+    /**
+     * Methode principale pour emettre un message vers le serveur. Attend une confirmation/reponse.
+     * Le message tranmis est signe localement (sauf si inhibe) et la signature de la reponse est verifiee.
+     * @param {*} eventName 
+     * @param {*} message 
+     * @param {*} opts 
+     * @returns 
+     */
+    async emitCallbackResponses(message: messageStruct.MilleGrillesMessage, callback: (m: MessageResponse) => void, 
+        opts?: EmitWithAckProps): Promise<boolean> 
+    {
+        opts = opts || {}
+        if(!this.socket) throw new Error('socket non configure');
+
+        let overrideConnected = opts.overrideConnected || false;
+
+        if(!overrideConnected && !this.socket.connected) throw new DisconnectedError();
+        if(!message || !message.id || !message.sig) throw new Error('Message must be signed');
+
+        let socketEvent = 'stream_' + message.id;
+        let timeoutDelay = opts.timeout || 30_000;
+
+        // Listen on socket
+        let done: any = new Promise((resolve, reject) => {
+            let timeout = null;
+            this.socket.on(socketEvent, async (response: messageStruct.MilleGrillesMessage)=>{
+                clearTimeout(timeout);
+                // console.debug("emitCallbackResponses Got response ", response);
+                if(response) {
+                    if(response.sig) {
+                        try {
+                            let result = await this.verifyResponse(response, opts);
+                            // console.debug("Verified and decrypted result, callback with : ", result);
+                            callback(result);
+                        } catch(err) {
+                            reject(err);
+                        }
+                    } else {
+                        // @ts-ignore
+                        if(response.err) throw new Error(response.err);  // Server error
+                        if(opts.noverif) return response as MessageResponse;
+                        return(new Error("Invalid response"));
+                    }
+                }
+                // Check if we're done
+                // @ts-ignore
+                if(response.attachements?.streaming !== true) {
+                    return resolve(true);  // Done
+                } else {
+                    // Not done
+                    timeout = setTimeout(()=>{reject('Timeout')}, timeoutDelay);
+                }
+            })
+            timeout = setTimeout(()=>{reject('Timeout')}, timeoutDelay);
+        });
+
+        this.socket.volatile.emit('route_message_stream_response', message);
+        try {
+            await done;
+        } finally {
+            this.socket.off(socketEvent);
+        }
+
+        return done;
+    }
+    
+
     async verifyResponse(response: any, opts?: VerifyResponseOpts): Promise<MessageResponse> {
         opts = opts || {}
     
@@ -391,7 +458,7 @@ export default class ConnectionSocketio {
             let content = {'__original': original, '__certificate': certificateWrapper} as MessageResponse;
             // let responseObject = new messageStruct.MilleGrillesMessage(response.estampille, response.kind, response.contenu);
             if(response.kind === 6) {
-                console.info("Encrypted response %O", original)
+                // console.info("Encrypted response %O", original)
                 const contenuParsed = await this.messageFactory.decryptMessage(original);
                 content = {...content, ...contenuParsed};
             } else if(original.contenu) {
@@ -545,7 +612,7 @@ export default class ConnectionSocketio {
 
         // Register event listeners for each routingKey
         for(let rk of routingKeys) {
-            console.debug("Socket on : ", rk);
+            // console.debug("Socket on : ", rk);
             this.socket.on(rk, wrappedCallback);
         }
     }
@@ -687,49 +754,3 @@ class MessageFactory {
 }
 
 export class DisconnectedError extends Error {}
-
-// export async function decryptResponse(messageFactory: MessageFactory, message: messageStruct.MilleGrillesMessage): Promise<Object> {
-//     let dechiffrage = message.dechiffrage
-
-//     // Decrypt the secret key
-//     let publicKeyString = messageFactory.signingKey.publicKey;
-//     let privateKey = messageFactory.signingKey.key.private;
-//     let decryptedKey = await x25519.decryptEd25519(dechiffrage.cles[publicKeyString], privateKey);
-
-//     // let contenu = multiencoding.decodeBase64Nopad(message.contenu);
-
-//     // console.debug("Formatteur Messages : %O", formatteurMessage)
-//     // const cleChiffree = multiencoding.decodeBase64Nopad(dechiffrage.cles[publicKeyString])
-//     let nonceString = dechiffrage.nonce || (dechiffrage.header?dechiffrage.header.slice(1):null)
-//     let nonce = multiencoding.decodeBase64Nopad(nonceString);
-
-//     const format = dechiffrage.format;
-
-//     let cleartext;
-//     if(format === 'mgs4') {
-//         let decipher = await encryptionMgs4.getMgs4Decipher(decryptedKey, nonce);
-//         let output = await decipher.update(multiencoding.decodeBase64Nopad(message.contenu));
-//         let finalOutput = await decipher.finalize();
-
-//     } else {
-//         throw new Error('Unsupported encryption format');
-//     }
-
-//     // console.debug("Contenu : %O, cle chiffree %O, nonce %s, verification %s, format %s", 
-//     //   contenu, cleChiffree, nonce, verification, format)
-
-//     // const cleDechiffree = await ed25519Utils.dechiffrerCle(cleChiffree, _clePrivee)
-//     // console.debug("Cle dechiffree %O", cleDechiffree)
-  
-//     // contenu = await chiffrage.dechiffrer(cleDechiffree, contenu, {format, header: 'm'+nonce})
-//     // console.debug("Contenu dechiffre\n", contenu)
-  
-//     // Decompresser (gzip)
-//     contenu = new TextDecoder().decode(pako.ungzip(contenu))
-//     // console.debug("Contenu decompresse\n%s", contenu)
-  
-//     contenu = JSON.parse(contenu)
-//     // console.debug("Contenu parsed %O", contenu)
-  
-//     return contenu
-// }
