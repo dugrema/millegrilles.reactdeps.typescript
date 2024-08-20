@@ -76,6 +76,7 @@ export default class ConnectionSocketio {
     opts?: ConnectionSocketioProps;
     unsubscribeHandlers: { [key: string]: () => void };
     encryptionCertificates: Array<certificates.CertificateWrapper>;
+    authenticated: boolean;
 
     /**
      * 
@@ -90,6 +91,7 @@ export default class ConnectionSocketio {
         this.opts = opts;
         this.unsubscribeHandlers = {};
         this.encryptionCertificates = [];
+        this.authenticated = false;
 
         // Wrap the callback to avoid a comlink error.
         this.callback = (params) => { callback(params); }
@@ -142,12 +144,14 @@ export default class ConnectionSocketio {
     }
 
     onDisconnect(reason: string) {
-        if(this.callback) this.callback({connected: false});
+        this.authenticated = false;
+        if(this.callback) this.callback({connected: false, authenticated: false});
         console.warn("Disconnected, reason : ", reason);
     }
 
     onReconnect() {
-        if(this.callback) this.callback({connected: true});
+        this.authenticated = false;
+        if(this.callback) this.callback({connected: true, authenticated: false});
         this.onConnectHandler()
             .catch((err: Error)=>console.error("Reconnection error ", err));
     }
@@ -156,7 +160,8 @@ export default class ConnectionSocketio {
     }
 
     onConnectError(err: Error) {
-        if(this.callback) this.callback({connected: false});
+        this.authenticated = false;
+        if(this.callback) this.callback({connected: false, authenticated: false});
         console.error("Connection error : ", err);
     }
 
@@ -187,8 +192,10 @@ export default class ConnectionSocketio {
         }
 
         if(this.callback) {
-            let params: ConnectionCallbackParameters = {connected: true, authenticated: info.auth};
-            if(info.username) params.username = info.username;
+            let params: ConnectionCallbackParameters = {connected: true, authenticated: this.authenticated};
+            // @ts-ignore
+            let username = params.username || params.nomUsager;
+            if(username) params.username = username;
             if(info.userId) params.userId = info.userId;
             if(info.idmg) params.idmg = info.idmg;
             this.callback(params);
@@ -542,7 +549,14 @@ export default class ConnectionSocketio {
             data, 'authentication', 'authenticate', 
             {attachments: { apiMapping }, eventName: 'authentication_authenticate', role: 'private_webapi'}
         );
-        return authenticationResponse.ok === true;
+
+        let authOk = authenticationResponse.ok === true;
+        this.authenticated = authOk;
+
+        let params: ConnectionCallbackParameters = {connected: true, authenticated: authOk};
+        this.callback(params);
+
+        return authOk;
     }
 
     async subscribeActivationCode(callback: SubscriptionCallback, publicKey: string): Promise<void> {
