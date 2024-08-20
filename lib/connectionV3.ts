@@ -368,8 +368,8 @@ export default class ConnectionSocketio {
     /**
      * Methode principale pour emettre un message vers le serveur. Attend une confirmation/reponse.
      * Le message tranmis est signe localement (sauf si inhibe) et la signature de la reponse est verifiee.
-     * @param {*} eventName 
      * @param {*} message 
+     * @param {*} callback 
      * @param {*} opts 
      * @returns 
      */
@@ -392,12 +392,10 @@ export default class ConnectionSocketio {
             let timeout = null;
             this.socket.on(socketEvent, async (response: messageStruct.MilleGrillesMessage)=>{
                 clearTimeout(timeout);
-                // console.debug("emitCallbackResponses Got response ", response);
                 if(response) {
                     if(response.sig) {
                         try {
                             let result = await this.verifyResponse(response, opts);
-                            // console.debug("Verified and decrypted result, callback with : ", result);
                             callback(result);
                         } catch(err) {
                             reject(err);
@@ -626,7 +624,6 @@ export default class ConnectionSocketio {
 
         // Register event listeners for each routingKey
         for(let rk of routingKeys) {
-            // console.debug("Socket on : ", rk);
             this.socket.on(rk, wrappedCallback);
         }
     }
