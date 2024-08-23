@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { certificates, ed25519, messageStruct, multiencoding, x25519, encryptionMgs4 } from 'millegrilles.cryptography';
+import { certificates, ed25519, messageStruct } from 'millegrilles.cryptography';
 
 const CONST_TRANSPORTS = ['websocket', 'polling'];
 
