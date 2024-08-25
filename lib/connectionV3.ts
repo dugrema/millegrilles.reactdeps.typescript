@@ -488,7 +488,7 @@ export default class ConnectionSocketio {
      * @returns Response from the back-end component
      */
     async sendRequest(message: Object, domain: string, action: string, props?: SendProps): Promise<MessageResponse> {
-        if(props.encrypt) throw new Error('Encrypting a request is not unsupported');
+        if(props?.encrypt) throw new Error('Encrypting a request is not unsupported');
         if(!this.messageFactory) throw new Error("User is not initialized");
 
         let routing: {domaine: string, action: string, partition?: string} = {domaine: domain, action};
