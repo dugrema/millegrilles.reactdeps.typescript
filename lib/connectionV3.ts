@@ -518,7 +518,7 @@ export default class ConnectionSocketio {
         let routing: {domaine: string, action: string, partition?: string} = {domaine: domain, action};
         if(props?.partition) routing.partition = props.partition;
 
-        if(props.encrypt) {
+        if(props?.encrypt) {
             throw new Error('todo');
         }
 
