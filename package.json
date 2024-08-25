@@ -37,8 +37,16 @@
     "typescript": "5.5.3"
   },
   "dependencies": {
+    "@rollup/plugin-json": "^6.1.0",
+    "@types/moment-duration-format": "^2.2.6",
+    "@types/react": "^18.3.4",
+    "@types/react-dom": "^18.3.0",
     "idb": "^8.0.0",
     "millegrilles.cryptography": "github:dugrema/millegrilles.cryptography.ts",
+    "moment-duration-format": "^2.3.2",
+    "moment-timezone": "^0.5.45",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "socket.io-client": "^4.7.5"
   },
   "type": "module",

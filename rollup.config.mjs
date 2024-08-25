@@ -8,6 +8,7 @@ import typescript from "rollup-plugin-typescript2";
 import terser from "@rollup/plugin-terser";
 import pkg from "./package.json" with { type: "json" };
 import nodePolyfills from "rollup-plugin-polyfill-node";
+import rollupJson from '@rollup/plugin-json'
 
 const __filename = url.fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,6 +54,7 @@ const browser = [
     input,
     plugins: [
       nodePolyfills({include: ["crypto"]}),
+      rollupJson(),
       resolve({
         mainFields: ["esnext", "module", "main"],
         preferBuiltins: true,
