@@ -27,6 +27,7 @@ export type SendProps = VerifyResponseOpts & {
     partition?: string,
     attachments?: Object
     encrypt?: boolean,
+    nowait?: boolean,
 }
 
 export type EmitProps = {
@@ -529,7 +530,12 @@ export default class ConnectionSocketio {
 
         // Ensure the domain is added to emit props for verification. It is overriddeen when already present in props.
         let emitWithAckProps = props?{domain, ...props}:{domain};
-        return await this.emitWithAck(eventName, command, emitWithAckProps);
+        if(props.nowait) {
+            let ok = await this.emit(eventName, command, emitWithAckProps);
+            return {ok};
+        } else {
+            return await this.emitWithAck(eventName, command, emitWithAckProps);
+        }
     }
 
     async authenticate(apiMapping?: Object, reconnect?: boolean) {
