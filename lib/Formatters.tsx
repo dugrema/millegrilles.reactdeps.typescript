@@ -18,7 +18,7 @@ const CONST_DATE_DEFAULT = 'YYYY/MM/DD',
       CONST_TIMEZONE_DEFAULT  = 'America/Toronto'
 
 export type FormatterPropType = {
-    value: number,
+    value?: number,
     precision?: number,
 };
 
@@ -73,7 +73,7 @@ export function FormatteurTaille(props: FormatterPropType): JSX.Element {
 }
 
 export type FormatterDateProps = {
-    value: number,
+    value?: number,
     format?: string,
     timezone?: string,
 }
