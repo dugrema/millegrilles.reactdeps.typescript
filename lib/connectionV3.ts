@@ -729,6 +729,13 @@ export class ConnectionWorker {
         if(!this.connection) throw new Error("Connection is not initialized");
         if(!this.connection.messageFactory) throw new Error("User is not initialized");
         return await this.connection.verifyResponse(message);
+    }
+
+    async createRoutedMessage(kind: messageStruct.MessageKind, content: Object, routing: messageStruct.Routage, 
+        timestamp?: Date): Promise<messageStruct.MilleGrillesMessage> 
+    {
+        if(!this.connection) throw new Error("Connection is not initialized");
+        return await this.connection.createRoutedMessage(kind, content, routing, timestamp);
     }    
 }
 
