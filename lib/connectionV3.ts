@@ -530,7 +530,7 @@ export default class ConnectionSocketio {
 
         // Ensure the domain is added to emit props for verification. It is overriddeen when already present in props.
         let emitWithAckProps = props?{domain, ...props}:{domain};
-        if(props.nowait) {
+        if(props?.nowait) {
             let ok = await this.emit(eventName, command, emitWithAckProps);
             return {ok};
         } else {
