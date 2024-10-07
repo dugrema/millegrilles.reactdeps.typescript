@@ -28,6 +28,7 @@ export type SendProps = VerifyResponseOpts & {
     attachments?: Object
     encrypt?: boolean,
     nowait?: boolean,
+    exchange?: string,
 }
 
 export type EmitProps = {
@@ -499,6 +500,13 @@ export default class ConnectionSocketio {
         if(props?.attachments) request.attachements = props.attachments;
         let eventName = props?.eventName || 'route_message';
 
+        if(props?.exchange) {
+            // Override the default exchange for this request. Will be rejected if more secure than allowed.
+            let attachements = request.attachements || {} as any;
+            attachements.destination_exchange = props.exchange;
+            request.attachements = attachements;
+        }
+
         // Ensure the domain is added to emit props for verification. It is overriddeen when already present in props.
         let emitWithAckProps = props?{domain, ...props}:{domain};
         return await this.emitWithAck(eventName, request, emitWithAckProps);
@@ -527,6 +535,13 @@ export default class ConnectionSocketio {
         if(!command) throw new Error("Error generating command: null");
         if(props?.attachments) command.attachements = props.attachments;
         let eventName = props?.eventName || 'route_message';
+
+        if(props?.exchange) {
+            // Override the default exchange for this request. Will be rejected if more secure than allowed.
+            let attachements = command.attachements || {} as any;
+            attachements.destination_exchange = props.exchange;
+            command.attachements = attachements;
+        }
 
         // Ensure the domain is added to emit props for verification. It is overriddeen when already present in props.
         let emitWithAckProps = props?{domain, ...props}:{domain};
