@@ -76,6 +76,7 @@ export type FormatterDateProps = {
     value?: number,
     format?: string,
     timezone?: string,
+    className?: string,
 }
 
 export function FormatterDate(props: FormatterDateProps): JSX.Element {
@@ -83,7 +84,7 @@ export function FormatterDate(props: FormatterDateProps): JSX.Element {
     let timezone = props.timezone || CONST_TIMEZONE_DEFAULT;
     const value = props.value;
     if(!value) return <span></span>;
-    return <span>{moment(value*1000).tz(timezone).format(format)}</span>;
+    return <span className={props.className}>{moment(value*1000).tz(timezone).format(format)}</span>;
 }
 
 export function FormatterDuree(props: FormatterPropType): JSX.Element {
