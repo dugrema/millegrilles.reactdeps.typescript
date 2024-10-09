@@ -50,14 +50,16 @@ export type MessageResponse = {
     ok?: boolean,
     code?: number,
     err?: string,
-    __original?: messageStruct.MilleGrillesMessage,
-    __certificate?: certificates.CertificateWrapper,
+    content?: {
+        __original?: messageStruct.MilleGrillesMessage,
+        __certificate?: certificates.CertificateWrapper,
+    }
 };
 
 export type SubscriptionMessage = {
     exchange: string,
     routingKey: string,
-    message: MessageResponse | messageStruct.MilleGrillesMessage,
+    message: MessageResponse,
 }
 
 export interface SubscriptionCallback {
