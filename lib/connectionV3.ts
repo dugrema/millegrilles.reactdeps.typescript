@@ -50,10 +50,12 @@ export type MessageResponse = {
     ok?: boolean,
     code?: number,
     err?: string,
-    content?: {
-        __original?: messageStruct.MilleGrillesMessage,
-        __certificate?: certificates.CertificateWrapper,
-    }
+    __original?: messageStruct.MilleGrillesMessage,
+    __certificate?: certificates.CertificateWrapper,
+    // content?: {
+    //     __original?: messageStruct.MilleGrillesMessage,
+    //     __certificate?: certificates.CertificateWrapper,
+    // }
 };
 
 export type SubscriptionMessage = {
