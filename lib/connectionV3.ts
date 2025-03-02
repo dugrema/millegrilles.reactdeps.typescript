@@ -803,6 +803,8 @@ class MessageFactory {
 
     async decryptMessage(message: messageStruct.MilleGrillesMessage): Promise<Object> {
         if(!message.dechiffrage) throw new Error("Wrong message type");
+        // Put getContent back in message
+        Object.setPrototypeOf(message, messageStruct.MilleGrillesMessage.prototype);
         return await message.getContent(this.signingKey);
     }
 }
