@@ -435,7 +435,6 @@ export default class ConnectionSocketio {
         return done;
     }
     
-
     async verifyResponse(response: any, opts?: VerifyResponseOpts): Promise<MessageResponse> {
         opts = opts || {}
     
@@ -761,7 +760,19 @@ export class ConnectionWorker {
     {
         if(!this.connection) throw new Error("Connection is not initialized");
         return await this.connection.createRoutedMessage(kind, content, routing, timestamp);
-    }    
+    }
+
+    /**
+     * Decrypt a message with the currently loaded certificate.
+     * @param message Message to decrypt. Must match the private key currently used.
+     * @returns Decrypted content
+     */
+    async decryptMessage(message: messageStruct.MilleGrillesMessage): Promise<object> {
+        if(!this.connection) throw new Error("Connection is not initialized");
+        if(!this.connection.messageFactory) throw new Error("User is not initialized");
+        return await this.connection.messageFactory.decryptMessage(message);
+    }
+
 }
 
 /** Facade for the messageStruct create methods. */
